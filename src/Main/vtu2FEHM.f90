@@ -1,6 +1,6 @@
 !-------------------------------------------------------------------------------
 ! "vtu2FEHM v.1.0" 
-! Copyright 2016 (RSE SpA)
+! Copyright 2016,2018 (RSE SpA)
 ! "vtu2FEHM v.1.0" authors and email contact are provided on 
 ! the documentation file.
 ! This program is free software: you can redistribute it and/or modify
@@ -17,18 +17,20 @@
 !-------------------------------------------------------------------------------
 ! Description. “vtu2FEHM v.1.0” (RSE SpA) reads an unstructured grid (.vtu) of 
 !              a finite element mesh, converts it into a grid input file for 
-!              FEHM (.grid) and produces the associated geological zone list 
-!              (portion of the file .dat). Note: the mesh elements should be 
-!              all of the same type (element%kind). Algorithm:
+!              FEHM (.grid), produces the associated geological zone list 
+!              (portion of the file .dat) and writes the node-elements list. 
+!              Note: the mesh elements should be all of the same type 
+!              (element%kind). Algorithm:
 !                 1) Decoding the unstructured grid (.vtu)
 !                 2) Writing the grid input file for FEHM (.grid)
 !                 3) Writing the geological zone list (portion of the file .dat)
 !                 4) Writing the unstructured .vtu file as a check
+!                 5) Writing the node elements (starting from the element nodes)
 !-------------------------------------------------------------------------------
 PROGRAM vtu2FEHM
 !------------------------
 ! Modules
-!------------------------ 
+!------------------------
 !------------------------
 ! Declarations
 !------------------------
@@ -36,6 +38,7 @@ implicit none
 type node_type
    real :: coor(3)
    integer(4) :: material
+   integer(4) :: element_ID(8)
 end type node_type
 type element_type
    integer(4) :: offset,kind,id,material
@@ -43,7 +46,7 @@ type element_type
 end type element_type
 integer(4) :: n_materials,i,j,k,n_nodes,n_elements,element_nodes,ia,ia_pre
 integer(4) :: alloc_stat,dealloc_stat,open_stat,close_stat
-character(len=80) :: line,char1,char2,vtu_file_name
+character(len=80) :: line,char1,char2,vtu_file_name,node_elements_file_name
 integer(4),dimension(:),allocatable :: material_elem,material_nodes
 character(len=4) :: fmt_char1,fmt_char2
 type(node_type),dimension(:),allocatable :: node
@@ -59,12 +62,13 @@ character(len=80) :: vtu_file_name_test
 ! Initializations
 !------------------------
 write(*,*) " Start program Mvtu2FEHM"  
-call getarg (1,vtu_file_name)
+call getarg(1,vtu_file_name)
 ia_pre=0
 n_materials=0
 char1(1:80)=" "
 char2(1:80)=" "
 vtu_file_name_test = "test.vtu"
+node_elements_file_name = "node_elements.txt"
 !------------------------
 ! Statements
 !------------------------
@@ -125,7 +129,6 @@ if(.not.allocated(element)) then
 endif
 write(*,*) "        The mesh is composed by ", n_nodes, "nodes and ",          &
    n_elements," elements"
-!
 ! Reading the nodes 
 read(11,'(/)')
 do i=1,n_nodes,12
@@ -405,7 +408,55 @@ if (close_stat/=0) then
    else
       write(*,*) 'Closing of ',vtu_file_name_test,' successfully completed.'
 endif
-write(*,*) "       Writing the unstructured .vtu file as a check : end" 
+write(*,*) "       Writing the unstructured .vtu file as a check : end"
+! Writing the unstructured .vtu file as a check: end 
+! 5) Writing the node elements (starting from the element nodes): start
+write(*,*) " 5) Writing the node elements (starting from the element nodes): ",&
+   "start  "
+open(15,file=node_elements_file_name,IOSTAT=open_stat)
+if (open_stat/=0) then
+   write(*,*) 'Opening of ',node_elements_file_name,' failed; the program ',   &
+      'stops here. '
+   stop
+   else
+      write(*,*) 'Opening of ',node_elements_file_name,' successfully ',       &
+         'completed.'
+endif
+do i=1,n_nodes
+   node(i)%element_ID(:) = -999
+enddo
+! Loop over the elements
+do i=1,n_elements
+! Loop over the element nodes
+   do j=1,8
+! Loop over the node elements
+      do k=1,8
+         if (node(element(i)%node_id(j))%element_ID(k)>=0) then
+            cycle
+            else
+               node(element(i)%node_id(j))%element_ID(k) = i - 1
+               exit
+         endif
+      enddo
+   enddo
+enddo
+write(15,'(a)') "Node ID Element IDs"
+do i=1,n_nodes
+   write(15,'(9(1x,i7))') (i-1),node(i)%element_ID(:)
+enddo
+flush(15)
+close(15,IOSTAT=close_stat)
+if (close_stat/=0) then
+   write(*,*) 'Closing of ',node_elements_file_name,' failed; the program ',   &
+      'stops here. '
+   stop
+   else
+      write(*,*) 'Closing of ',node_elements_file_name,' successfully ',       &
+         'completed.'
+endif
+write(*,*) "       Writing the node elements (starting from the element nodes",&
+   ") : end"
+! Writing the node elements (starting from the element nodes): end
 !------------------------
 ! Deallocations
 !------------------------
